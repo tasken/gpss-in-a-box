@@ -1,0 +1,14 @@
+services:
+  local-gpss:
+    build:
+      context: .
+      target: ${BUILD_TARGET:-not-configured}
+      args:
+        UPDATE_LEGALITY: ${UPDATE_LEGALITY:-false}
+        PKHEX_TAG: ${PKHEX_TAG:-unused}
+    container_name: local-gpss
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./:/app/host
+    restart: unless-stopped

@@ -1,0 +1,101 @@
+# Technical Details
+
+## Why this exists
+
+The official [local-gpss v2.0.1](https://github.com/FlagBrew/local-gpss) ships with a PKHeX legality engine from December 2025. As new games and updates come out, that engine falls behind and starts marking valid Pokemon as illegal (or vice versa).
+
+This project rebuilds the legality engine ([GpssConsole](https://github.com/FlagBrew/local-gpss)) from source against the latest [PKHeX](https://github.com/kwsch/PKHeX) and [PKHeX-Plugins](https://github.com/santacrab2/PKHeX-Plugins), so legality checks stay current. It also patches the Go server's progress output to flush properly in Docker.
+
+## Setup
+
+`setup.sh` has two modes, determined by whether `.local/config.json` exists:
+
+**First run** asks about the legality engine (build latest or use bundled), the community Pokemon backup (~91k Pokemon), whether to re-check legality on those Pokemon, and whether to start the server after building. It then generates config, builds the Docker image, and optionally starts.
+
+**Returning runs** check for engine updates via the GitHub API. If a newer version is available, it offers to rebuild. It only touches the Docker image when something actually changed.
+
+Both flows store their choices in `.env` (read by Docker Compose) and `.local/pkhex_version` (for version tracking across runs).
+
+## Build
+
+The Dockerfile has two build targets:
+
+**`not-configured`** is a tiny Alpine image (~5MB) with just the entrypoint script. This is what `docker compose up` builds when no `.env` exists yet (i.e. before `setup.sh` has run). It shows a message telling the user to run setup and waits.
+
+**`runtime`** is the full image, built in three stages:
+
+1. **.NET stage** builds GpssConsole from the latest PKHeX source (or downloads the bundled v2.0.1 binary if the user chose that). Two `sed` patches fix breaking API changes in newer PKHeX:
+   - `pokemon.Context.Generation()` → `.Generation` (method became a property)
+   - `DecryptedPartyData` / `DecryptedBoxData` → `WriteDecryptedDataParty()` / `WriteDecryptedDataStored()` (direct byte access replaced with write methods)
+
+2. **Go stage** builds the local-gpss API server. One `sed` patch adds `\n` to `fmt.Printf` progress lines so they flush instead of getting stuck in Go's internal buffer.
+
+3. **Alpine stage** combines both binaries into a minimal runtime image with the required shared libraries.
+
+Docker Compose reads `BUILD_TARGET`, `UPDATE_LEGALITY`, and `PKHEX_TAG` from `.env`, so `docker compose up --build` always uses the right settings without needing `setup.sh` again.
+
+## Runtime
+
+The container entrypoint (`entrypoint.sh`) does a few things before and around the server process:
+
+If `config.json` is missing, it prints a setup message and sleeps forever (clean `docker stop`, no restart loop). Otherwise, it starts the Go server with its output piped through a filter that:
+
+- Reduces progress lines (Checked/Created) to every 100th, with percentage and ETA on re-check lines
+- Replaces `0.0.0.0` in the startup message with the machine's LAN IP (read from `.local/host_ip`)
+- Passes everything else through unchanged
+
+A named pipe keeps the server PID known so TERM/INT signals forward cleanly for graceful Docker shutdown.
+
+## Project structure
+
+```
+gpss-in-a-box/
+├── Dockerfile           # Multi-stage build (not-configured + runtime targets)
+├── docker-compose.yml   # Service config, reads build args from .env
+├── entrypoint.sh        # Container startup, progress filter, signal handling
+├── setup.sh             # Interactive setup wizard
+├── README.md            # User guide
+├── TECHNICAL.md         # This file
+├── .env                 # Build args (gitignored, created by setup.sh)
+└── .local/              # Runtime data (gitignored, created by setup.sh)
+    ├── config.json      # Server configuration
+    ├── pkhex_version    # Installed engine version ("bundled" or tag)
+    ├── host_ip          # Machine LAN IP for log display
+    ├── local-gpss.db    # Active database
+    └── gpss.db          # Backup database (downloaded from original GPSS)
+```
+
+## Troubleshooting
+
+| Problem | What to do |
+|---------|------------|
+| 3DS shows an error | Make sure the server is running and check the IP address |
+| Error right after entering the URL | Add `/` at the end of the URL |
+| Connection refused | Open the firewall port (see below) |
+| No Pokemon showing up | The backup is still importing. Run `docker compose logs -f` to check |
+| Pokemon incorrectly marked as illegal | Run `./setup.sh` again to get the latest legality engine |
+| 3DS freezes | Try updating PKSM from the [latest release](https://github.com/FlagBrew/PKSM/releases) |
+
+### Firewall
+
+If your 3DS can't connect, your firewall might be blocking port 8082:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 8082 proto tcp
+```
+
+Remove the rule later with:
+
+```bash
+sudo ufw delete allow from 192.168.1.0/24 to any port 8082 proto tcp
+```
+
+### Starting over
+
+To wipe everything and start fresh:
+
+```bash
+docker compose down
+rm -rf .local .env
+./setup.sh
+```
