@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GPSS-in-a-Box</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/mobile.css" media="(max-width: 900px)" />
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <rect x="1" y="1" width="20" height="20" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M1 11 H21" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="11" cy="11" r="3" fill="var(--bg)" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">GPSS<span class="brand-dim">.viewer</span></div>
+          <div class="brand-sub" id="brand-sub">loading index…</div>
+        </div>
+      </div>
+      <div class="search-wrap">
+        <span class="search-icon micon" aria-hidden="true">search</span>
+        <input type="search" id="q" class="search-input" placeholder="species, nickname, OT, code, or id…" spellcheck="false" autocomplete="off" />
+        <span class="search-kbd">/</span>
+      </div>
+      <div class="topbar-meta">
+        <span class="meta-pill">
+          <span class="meta-label">match</span>
+          <span class="meta-val" id="match-count">—<span class="meta-sub" id="match-total"></span></span>
+        </span>
+        <div class="view-toggle" role="tablist" aria-label="View mode">
+          <button type="button" data-view="grid" title="Grid (G)"><span class="micon">grid_view</span></button>
+          <button type="button" data-view="list" class="active" title="List (L)"><span class="micon">view_list</span></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="body">
+      <aside class="rail" id="rail">
+        <div class="rail-section">
+          <div class="rail-head">
+            <span>filters</span>
+            <button type="button" class="link-btn" id="reset-filters" hidden>reset</button>
+          </div>
+          <div class="rail-group">
+            <div class="rail-label">legality</div>
+            <div class="segmented" id="seg-legal">
+              <button type="button" class="seg-btn active" data-val="any">any</button>
+              <button type="button" class="seg-btn" data-val="legal"><span class="seg-dot" style="background:var(--ok)"></span>legal</button>
+              <button type="button" class="seg-btn" data-val="illegal"><span class="seg-dot" style="background:var(--err)"></span>illegal</button>
+            </div>
+          </div>
+          <div class="rail-group">
+            <div class="rail-label">shiny</div>
+            <div class="segmented" id="seg-shiny">
+              <button type="button" class="seg-btn active" data-val="any">any</button>
+              <button type="button" class="seg-btn" data-val="shiny"><span class="seg-dot" style="background:var(--gold)"></span>shiny</button>
+              <button type="button" class="seg-btn" data-val="regular">regular</button>
+            </div>
+          </div>
+          <div class="rail-group">
+            <div class="rail-label">sort</div>
+            <select class="select" id="sort">
+              <option value="recent">recent uploads</option>
+              <option value="dl">most downloaded</option>
+              <option value="level">level (high→low)</option>
+              <option value="az">species A–Z</option>
+              <option value="id">database id</option>
+            </select>
+          </div>
+        </div>
+        <div class="rail-section">
+          <div class="rail-head"><span>generation</span></div>
+          <div class="gen-grid" id="gen-grid"></div>
+        </div>
+        <div class="rail-section">
+          <div class="rail-head"><span>session</span></div>
+          <div class="session-stats" id="session-stats">
+            <div class="sx-row"><span>filtered</span><span class="mono" id="sx-filtered">—</span></div>
+            <div class="sx-row"><span>page</span><span class="mono" id="sx-page">—</span></div>
+            <div class="sx-row"><span>coverage</span><span class="mono" id="sx-coverage">—</span></div>
+          </div>
+        </div>
+        <div class="rail-foot">
+          <div class="status-row"><span class="dot dot-ok"></span><span id="rail-status">index ready</span></div>
+          <span>PKHeX legality on demand</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="toolbar">
+          <div class="bcrumbs" id="bcrumbs"><span>all</span></div>
+          <span class="toolbar-right mut" id="toolbar-hint"></span>
+        </div>
+        <div class="results" id="results"></div>
+        <nav class="pager" id="pager">
+          <div class="pager-left">
+            <button type="button" class="btn pg-btn" id="prev" disabled><span class="micon">chevron_left</span> prev</button>
+            <button type="button" class="btn pg-btn" id="next" disabled>next <span class="micon">chevron_right</span></button>
+          </div>
+          <div class="pager-mid">
+            <span class="mut">page</span>
+            <span class="mono pg-num" id="page-num">1</span>
+            <span class="mut">of</span>
+            <span class="mono" id="pages-total">1</span>
+            <input type="number" class="pg-jump mono" id="page-jump" min="1" value="1" aria-label="Jump to page" />
+          </div>
+          <div class="pager-right mut" id="pager-meta"></div>
+        </nav>
+      </main>
+
+      <aside class="detail empty" id="detail">
+        <div class="detail-empty-inner" id="detail-empty">
+          <div class="empty-mark"><span class="micon">diamond</span></div>
+          <p class="empty-text">select a pokémon</p>
+          <p class="empty-sub mut">click a row or card · <span class="micon" style="font-size:14px">arrow_upward</span><span class="micon" style="font-size:14px">arrow_downward</span> to navigate</p>
+        </div>
+        <div id="detail-content" hidden></div>
+      </aside>
+    </div>
+
+    <section id="page" class="page"></section>
+
+    <footer class="statusbar">
+      <span class="status-cell" id="status-gpss">gpss …</span>
+      <span class="status-cell" id="status-db">db —</span>
+      <span class="status-cell" id="status-legality">legality …</span>
+      <span class="status-cell" id="status-sprites">sprites …</span>
+      <span class="status-spacer"></span>
+      <button type="button" class="btn-icon status-info-btn" id="status-info" title="Status"><span class="micon">info</span></button>
+      <span class="status-cell mut" id="status-hint"><span class="micon" style="font-size:12px">search</span> / search · <span class="micon" style="font-size:12px">grid_view</span> g grid · <span class="micon" style="font-size:12px">view_list</span> l list</span>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

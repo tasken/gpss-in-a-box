@@ -14,12 +14,29 @@ if [ ! -f config.json ]; then
     exit 0
 fi
 
-# Symlink the built binary so the server finds it at ./bin/GpssConsole
+# The Go server expects ./bin/GpssConsole relative to its working dir (.local/).
+# This symlink lands in the host-mounted folder — cleaned up on exit.
 ln -sf /app/bin bin
+
+# Serve sprites from host-mounted .local/sprites/ instead of baking into image.
+ln -sfn /app/host/.local/sprites /app/sprites
 
 HOST_IP="${HOST_IP:-}"
 if [ -z "$HOST_IP" ] && [ -f host_ip ]; then
     HOST_IP=$(cat host_ip)
+fi
+
+VIEWER_ENABLED="${VIEWER_ENABLED:-1}"
+GPSS_INTERNAL_PORT="${GPSS_INTERNAL_PORT:-8083}"
+PUBLIC_PORT=8082
+CONFIG_BACKUP=""
+VIEWER_PID=""
+
+if [ "$VIEWER_ENABLED" = "1" ]; then
+    CONFIG_BACKUP="/tmp/gpss-config-user.json"
+    cp config.json "$CONFIG_BACKUP"
+    python3 /app/viewer/patch_gpss_port.py \
+        "$CONFIG_BACKUP" config.json "$GPSS_INTERNAL_PORT" "127.0.0.1"
 fi
 
 PIPE=/tmp/gpss.pipe
@@ -29,13 +46,50 @@ mkfifo "$PIPE"
 /app/local-gpss > "$PIPE" 2>&1 &
 SERVER_PID=$!
 
-cleanup() {
+restore_config() {
+    if [ -n "$CONFIG_BACKUP" ] && [ -f "$CONFIG_BACKUP" ]; then
+        # Restore only the http section (port/addr) from the backup,
+        # preserving any flags the Go server changed at runtime.
+        python3 -c "
+import json
+with open('$CONFIG_BACKUP') as f: backup = json.load(f)
+with open('config.json') as f: current = json.load(f)
+current['http'] = backup['http']
+with open('config.json', 'w') as f: json.dump(current, f, indent=2); f.write('\n')
+" 2>/dev/null || cp "$CONFIG_BACKUP" config.json
+    fi
+}
+
+stop_services() {
+    kill -TERM "$VIEWER_PID" 2>/dev/null
     kill -TERM "$SERVER_PID" 2>/dev/null
+    wait "$VIEWER_PID" 2>/dev/null
     wait "$SERVER_PID" 2>/dev/null
-    rm -f "$PIPE"
+}
+
+cleanup() {
+    stop_services
+    restore_config
+    rm -f "$PIPE" bin
     exit 0
 }
 trap cleanup TERM INT
+
+if [ "$VIEWER_ENABLED" = "1" ]; then
+    export GPSS_DB="/app/host/.local/local-gpss.db"
+    export GPSS_INDEX="/app/host/.local/viewer-index.db"
+    export GPSS_BACKEND="http://127.0.0.1:${GPSS_INTERNAL_PORT}"
+    export GPSS_CONSOLE="/app/bin/GpssConsole"
+    export GPSS_RUNTIME=docker
+    export VIEWER_HOST="0.0.0.0"
+    export VIEWER_PORT="$PUBLIC_PORT"
+    python3 /app/viewer/server.py \
+        --db "$GPSS_DB" \
+        --gpss-backend "$GPSS_BACKEND" \
+        &
+    VIEWER_PID=$!
+    echo "Viewer: starting (pid $VIEWER_PID)"
+fi
 
 while IFS= read -r line; do
     case "$line" in
@@ -80,7 +134,27 @@ while IFS= read -r line; do
             echo "$line"
             ;;
         *"Starting HTTP server on "*)
-            if [ -n "$HOST_IP" ]; then
+            if [ "$VIEWER_ENABLED" = "1" ]; then
+                # Check viewer is still alive
+                if kill -0 "$VIEWER_PID" 2>/dev/null; then
+                    VIEWER_STATUS="running"
+                else
+                    VIEWER_STATUS="failed (check /tmp/viewer.log)"
+                fi
+                echo ""
+                echo "=== GPSS-in-a-Box ==="
+                echo "  GPSS server:  running (Go)"
+                echo "  Viewer:       ${VIEWER_STATUS} (Python)"
+                echo ""
+                if [ -n "$HOST_IP" ]; then
+                    echo "  Browse:    http://${HOST_IP}:${PUBLIC_PORT}/"
+                    echo "  PKSM API:  http://${HOST_IP}:${PUBLIC_PORT}/api/v2/gpss/"
+                else
+                    echo "  Browse:    http://<your-lan-ip>:${PUBLIC_PORT}/"
+                    echo "  PKSM API:  http://<your-lan-ip>:${PUBLIC_PORT}/api/v2/gpss/"
+                fi
+                echo ""
+            elif [ -n "$HOST_IP" ]; then
                 echo "$line" | sed "s/0\.0\.0\.0/$HOST_IP/"
             else
                 echo "$line"
@@ -94,5 +168,7 @@ done < "$PIPE"
 
 wait "$SERVER_PID"
 EXIT_CODE=$?
+stop_services
+restore_config
 rm -f "$PIPE"
 exit "$EXIT_CODE"

@@ -1,3 +1,6 @@
 .local/
 .claude/
 .env
+__pycache__/
+*.pkm
+poke.zip

@@ -1,5 +1,97 @@
-#!/bin/sh
+#!/bin/bash
 set -e
+
+# ---------------------------------------------------------------------------
+# ./setup.sh              Interactive setup / update wizard
+# ./setup.sh clean        Remove cache and Docker image (keeps database)
+# ./setup.sh clean --all  Remove everything including the database
+# ---------------------------------------------------------------------------
+
+# Colors (skip if not a terminal)
+if [ -t 1 ]; then
+    C_RESET='\033[0m'
+    C_BOLD='\033[1m'
+    C_DIM='\033[2m'
+    C_CYAN='\033[1;36m'
+    C_GREEN='\033[0;32m'
+    C_RED='\033[0;31m'
+    C_YELLOW='\033[0;33m'
+else
+    C_RESET='' C_BOLD='' C_DIM='' C_CYAN='' C_GREEN='' C_RED='' C_YELLOW=''
+fi
+
+info()  { printf "${C_CYAN}%s${C_RESET}\n" "$*"; }
+ok()    { printf "${C_GREEN}✓${C_RESET} %s\n" "$*"; }
+err()   { printf "${C_RED}✗ %s${C_RESET}\n" "$*" >&2; }
+warn()  { printf "${C_YELLOW}! %s${C_RESET}\n" "$*"; }
+header(){ printf "\n${C_BOLD}${C_CYAN}=== %s ===${C_RESET}\n\n" "$*"; }
+
+spinner() {
+    local pid=$1 msg=$2
+    local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0 start=$(date +%s)
+    while kill -0 "$pid" 2>/dev/null; do
+        local elapsed=$(( $(date +%s) - start ))
+        printf "\r  ${C_DIM}${frames:i%10:1}${C_RESET} %s (%ds)" "$msg" "$elapsed"
+        sleep 0.1
+        i=$((i + 1))
+    done
+    printf "\r\033[K"
+    wait "$pid"
+    return $?
+}
+
+# --- Clean command ---
+if [ "${1:-}" = "clean" ]; then
+    header "Clean"
+
+    # Docker needs sudo?
+    if docker info > /dev/null 2>&1; then
+        COMPOSE="docker compose"
+        DOCKER="docker"
+    else
+        COMPOSE="sudo docker compose"
+        DOCKER="sudo docker"
+    fi
+
+    # Always: stop container, remove image, remove cache
+    $COMPOSE down 2>/dev/null && ok "Stopped container" || true
+    $COMPOSE down --rmi all 2>/dev/null && ok "Removed Docker image" || true
+
+    if [ -d .local/cache ]; then
+        rm -rf .local/cache
+        ok "Removed Showdown cache"
+    fi
+
+    if [ -f .local/viewer-index.db ]; then
+        rm -f .local/viewer-index.db
+        ok "Removed search index"
+    fi
+
+    # --all: also remove database and config
+    if [ "${2:-}" = "--all" ]; then
+        echo ""
+        warn "This will delete your Pokemon database and all configuration."
+        printf "Are you sure? [y/N]: "
+        read -r confirm
+        case "$confirm" in
+            [yY]*)
+                rm -rf .local .env
+                ok "Removed database, config, and .env"
+                ;;
+            *)
+                echo "  Database kept."
+                ;;
+        esac
+    else
+        echo ""
+        info "Database and config are untouched."
+        echo "  To also remove the database: ./setup.sh clean --all"
+    fi
+
+    echo ""
+    exit 0
+fi
 
 # --- Prerequisites ---
 missing=""
@@ -10,7 +102,18 @@ for cmd in docker curl; do
 done
 if [ -n "$missing" ]; then
     echo ""
-    echo "Looks like some required tools are missing:$missing"
+    err "Looks like some required tools are missing:$missing"
+    echo ""
+    for cmd in $missing; do
+        case "$cmd" in
+            docker)
+                printf "  Install Docker: ${C_CYAN}https://docs.docker.com/get-docker/${C_RESET}\n"
+                ;;
+            curl)
+                printf "  Install curl: ${C_CYAN}sudo apt install curl${C_RESET}\n"
+                ;;
+        esac
+    done
     echo ""
     echo "Please install them and run this script again."
     exit 1
@@ -18,9 +121,9 @@ fi
 
 if ! docker compose version > /dev/null 2>&1; then
     echo ""
-    echo "Docker Compose v2 is required but not installed."
+    err "Docker Compose v2 is required but not installed."
     echo ""
-    echo "Install it here: https://docs.docker.com/compose/install/"
+    printf "  Install it here: ${C_CYAN}https://docs.docker.com/compose/install/${C_RESET}\n"
     exit 1
 fi
 
@@ -29,7 +132,7 @@ if docker info > /dev/null 2>&1; then
     COMPOSE="docker compose"
     DOCKER="docker"
 else
-    echo "Docker requires elevated permissions, using sudo."
+    warn "Docker requires elevated permissions, using sudo."
     echo ""
     COMPOSE="sudo docker compose"
     DOCKER="sudo docker"
@@ -37,14 +140,17 @@ fi
 
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 
+# Fix ownership of .local/ files (Docker creates them as root)
+if [ -d .local ] && [ "$(find .local -not -user "$(id -u)" -print -quit 2>/dev/null)" ]; then
+    sudo chown -R "$(id -u):$(id -g)" .local
+fi
+
 # --- Check existing setup ---
 if [ -f .local/config.json ]; then
     # ===========================================
     #  Already set up - check for updates
     # ===========================================
-    echo ""
-    echo "=== GPSS-in-a-Box ==="
-    echo ""
+    header "GPSS-in-a-Box"
 
     RUNNING=false
     if $DOCKER ps --filter name=local-gpss --format '{{.Names}}' 2>/dev/null | grep -q local-gpss; then
@@ -71,7 +177,7 @@ if [ -f .local/config.json ]; then
 
     # Image missing - need to rebuild with whatever was last used
     if [ "$IMAGE_EXISTS" = "false" ]; then
-        echo "Docker image not found. Needs to be rebuilt."
+        warn "Docker image not found. Needs to be rebuilt."
         echo ""
         NEED_BUILD=true
         if [ -n "$CURRENT_VERSION" ] && [ "$CURRENT_VERSION" != "bundled" ]; then
@@ -82,8 +188,8 @@ if [ -f .local/config.json ]; then
     # Check for engine updates
     if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" = "bundled" ]; then
         if [ -n "$LATEST_TAG" ]; then
-            echo "You're using the bundled legality engine (Dec 2025)."
-            echo "Latest version available: $LATEST_TAG"
+            info "You're using the bundled legality engine (Dec 2025)."
+            info "Latest version available: $LATEST_TAG"
             echo ""
             printf "Build the latest engine? [Y/n]: "
             read -r choice
@@ -99,11 +205,11 @@ if [ -f .local/config.json ]; then
                     ;;
             esac
         else
-            echo "Legality engine: bundled (Dec 2025)"
-            echo "(Could not check for updates)"
+            info "Legality engine: bundled (Dec 2025)"
+            warn "Could not check for updates"
         fi
     elif [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT_VERSION" ]; then
-        echo "Legality engine update available: $CURRENT_VERSION → $LATEST_TAG"
+        info "Legality engine update available: $CURRENT_VERSION → $LATEST_TAG"
         echo ""
         printf "Update? [Y/n]: "
         read -r choice
@@ -119,7 +225,7 @@ if [ -f .local/config.json ]; then
                 ;;
         esac
     else
-        echo "Legality engine is up to date ($CURRENT_VERSION)."
+        ok "Legality engine is up to date ($CURRENT_VERSION)."
     fi
 
     # Re-check if updating engine and database exists
@@ -141,6 +247,46 @@ if [ -f .local/config.json ]; then
         esac
     fi
 
+    # Check for empty database — offer to download community backup
+    DOWNLOAD_DB=false
+    if [ -f .local/local-gpss.db ]; then
+        DB_SIZE=$(stat -c%s .local/local-gpss.db 2>/dev/null || stat -f%z .local/local-gpss.db 2>/dev/null || echo 0)
+        if [ "$DB_SIZE" -lt 100000 ]; then
+            echo ""
+            warn "Database is nearly empty ($(( DB_SIZE / 1024 ))KB)."
+            echo "The community Pokemon backup (~91k Pokemon) can be downloaded"
+            echo "to give you a full library to browse."
+            echo ""
+            printf "Download Pokemon backup? [Y/n]: "
+            read -r dl_choice
+            case "$dl_choice" in
+                [nN]*)
+                    echo "  Skipping download"
+                    ;;
+                *)
+                    DOWNLOAD_DB=true
+                    echo "  Will download Pokemon backup"
+                    ;;
+            esac
+        fi
+    else
+        echo ""
+        echo "No database found. The community Pokemon backup (~91k Pokemon)"
+        echo "can be downloaded so your server has Pokemon ready to browse."
+        echo ""
+        printf "Download Pokemon backup? [Y/n]: "
+        read -r dl_choice
+        case "$dl_choice" in
+            [nN]*)
+                echo "  Skipping download"
+                ;;
+            *)
+                DOWNLOAD_DB=true
+                echo "  Will download Pokemon backup"
+                ;;
+        esac
+    fi
+
     # Update config
     cat > .local/config.json << EOF
 {
@@ -155,8 +301,8 @@ if [ -f .local/config.json ]; then
   },
   "misc": {
     "recheck_legality": $RECHECK,
-    "migrate_original_db": false,
-    "download_original_db": false
+    "migrate_original_db": $DOWNLOAD_DB,
+    "download_original_db": $DOWNLOAD_DB
   }
 }
 EOF
@@ -175,12 +321,19 @@ PKHEX_TAG=${PKHEX_TAG:-unused}
 EOF
 
         echo ""
-        echo "Building..."
-        echo ""
-        if ! $COMPOSE build; then
+        $COMPOSE build > /tmp/gpss-build.log 2>&1 &
+        BUILD_PID=$!
+        if spinner $BUILD_PID "Building Docker image"; then
+            ok "Build complete"
+        else
+            err "Build failed. Last 20 lines:"
+            tail -20 /tmp/gpss-build.log
             echo ""
-            echo "Something went wrong during the build."
-            echo "Try running the script again."
+            if grep -q "Could not resolve host" /tmp/gpss-build.log 2>/dev/null; then
+                warn "Could not reach GitHub. Check your internet connection."
+            elif grep -q "no space left" /tmp/gpss-build.log 2>/dev/null; then
+                warn "Disk full — check available space: df -h"
+            fi
             exit 1
         fi
 
@@ -194,18 +347,18 @@ EOF
     # Start / restart / already running
     if [ "$NEED_BUILD" = "true" ]; then
         echo ""
-        echo "Starting server..."
+        info "Starting server..."
         $COMPOSE up -d
         if [ "$RECHECK" = "true" ]; then
             echo ""
-            echo "The Pokemon re-check is running in the background."
+            info "The Pokemon re-check is running in the background."
             echo "You can use the server right away. To see progress:"
             echo ""
             echo "  $COMPOSE logs -f"
         fi
     elif [ "$RUNNING" = "true" ]; then
         echo ""
-        echo "Server is already running."
+        ok "Server is already running."
     else
         echo ""
         printf "Start the server? [Y/n]: "
@@ -225,7 +378,29 @@ EOF
     if [ -n "$IP" ]; then
         echo "$IP" > .local/host_ip
         echo ""
-        echo "Server: http://${IP}:8082/"
+        header "All done!"
+        echo ""
+        printf "  ${C_BOLD}Server URL:${C_RESET}\n"
+        printf "\n"
+        printf "  ┌─────────────────────────────────┐\n"
+        SUMMARY_URL="http://${IP}:8082/"
+        printf "  │                                 │\n"
+        printf "  │   ${C_BOLD}%s${C_RESET}" "$SUMMARY_URL"
+        SUMMARY_PAD=$((31 - ${#SUMMARY_URL}))
+        printf "%*s│\n" "$SUMMARY_PAD" ""
+        printf "  │                                 │\n"
+        printf "  └─────────────────────────────────┘\n"
+        echo ""
+        printf "  ${C_BOLD}In PKSM:${C_RESET}\n"
+        printf "    Set server URL to: ${C_CYAN}http://${IP}:8082/${C_RESET}\n"
+        printf "    ${C_DIM}(include the / at the end)${C_RESET}\n"
+        echo ""
+        printf "  ${C_BOLD}Quick reference:${C_RESET}\n"
+        printf "    ${C_DIM}start${C_RESET}   $COMPOSE up -d\n"
+        printf "    ${C_DIM}stop${C_RESET}    $COMPOSE down\n"
+        printf "    ${C_DIM}logs${C_RESET}    $COMPOSE logs -f\n"
+        printf "    ${C_DIM}update${C_RESET}  ./setup.sh\n"
+        echo ""
     fi
     echo ""
 
@@ -233,9 +408,7 @@ else
     # ===========================================
     #  First time setup
     # ===========================================
-    echo ""
-    echo "=== GPSS-in-a-Box Setup ==="
-    echo ""
+    header "GPSS-in-a-Box Setup"
     echo "This sets up a local GPSS server for PKSM on your 3DS."
     echo "The official server shut down in January 2026. This"
     echo "runs a replacement on your own machine."
@@ -264,10 +437,10 @@ else
             UPDATE_LEGALITY=true
             PKHEX_TAG=$(curl -sL https://api.github.com/repos/santacrab2/PKHeX-Plugins/releases/latest | grep '"tag_name"' | head -1 | cut -d'"' -f4)
             if [ -z "$PKHEX_TAG" ]; then
-                echo "  Could not fetch latest version. Using bundled engine instead"
+                warn "Could not fetch latest version. Using bundled engine instead"
                 UPDATE_LEGALITY=false
             else
-                echo "  Will build latest engine (version $PKHEX_TAG)"
+                ok "Will build latest engine (version $PKHEX_TAG)"
             fi
             ;;
     esac
@@ -276,7 +449,7 @@ else
     if [ -f .local/local-gpss.db ]; then
         DOWNLOAD_DB=false
         echo ""
-        echo "Existing Pokemon database found. Will use it."
+        ok "Existing Pokemon database found. Will use it."
     else
         echo ""
         echo "--- Pokemon Database ---"
@@ -356,8 +529,7 @@ else
 
     # --- Summary ---
     echo ""
-    echo "=== Ready to build ==="
-    echo ""
+    header "Ready to build"
     echo "  Legality engine:  $([ "$UPDATE_LEGALITY" = "true" ] && echo "Latest (v$PKHEX_TAG)" || echo "Bundled (Dec 2025)")"
     if [ -f .local/local-gpss.db ]; then
         echo "  Pokemon database: Existing"
@@ -425,42 +597,43 @@ EOF
 
     # --- Build ---
     echo ""
-    echo "Building... (this takes about a minute the first time)"
-    echo ""
-    if ! $COMPOSE build; then
+    $COMPOSE build > /tmp/gpss-build.log 2>&1 &
+    BUILD_PID=$!
+    if spinner $BUILD_PID "Building Docker image (this takes about a minute the first time)"; then
+        ok "Build complete"
+    else
+        err "Build failed. Last 20 lines:"
+        tail -20 /tmp/gpss-build.log
         echo ""
-        echo "Something went wrong during the build."
-        echo "Try running the script again. If it keeps failing,"
-        echo "check your internet connection and Docker installation."
+        if grep -q "Could not resolve host" /tmp/gpss-build.log 2>/dev/null; then
+            warn "Could not reach GitHub. Check your internet connection."
+        elif grep -q "no space left" /tmp/gpss-build.log 2>/dev/null; then
+            warn "Disk full — check available space: df -h"
+        fi
         exit 1
     fi
 
     # --- Start ---
     if [ "$START" = "true" ]; then
         echo ""
-        echo "Starting server..."
+        info "Starting server..."
         $COMPOSE up -d
-        echo ""
-        echo "=== All done! ==="
-        echo ""
-        echo "Your server is running on port 8082."
         if [ "$RECHECK" = "true" ]; then
             echo ""
-            echo "The Pokemon re-check is running in the background."
+            info "The Pokemon re-check is running in the background."
             echo "You can use the server right away. To see progress:"
             echo ""
             echo "  $COMPOSE logs -f"
         elif [ "$DOWNLOAD_DB" = "true" ]; then
             echo ""
-            echo "The Pokemon backup is importing in the background."
+            info "The Pokemon backup is importing in the background."
             echo "To see progress:"
             echo ""
             echo "  $COMPOSE logs -f"
         fi
     else
         echo ""
-        echo "=== Build complete! ==="
-        echo ""
+        header "Build complete!"
         echo "When you're ready to start the server, run:"
         echo ""
         echo "  $COMPOSE up -d"
@@ -468,19 +641,29 @@ EOF
 
     if [ -n "$IP" ]; then
         echo ""
-        echo "=== Connect your 3DS ==="
+        header "All done!"
         echo ""
-        echo "In PKSM, set the server URL to:"
+        printf "  ${C_BOLD}Server URL:${C_RESET}\n"
+        printf "\n"
+        printf "  ┌─────────────────────────────────┐\n"
+        SUMMARY_URL="http://${IP}:8082/"
+        printf "  │                                 │\n"
+        printf "  │   ${C_BOLD}%s${C_RESET}" "$SUMMARY_URL"
+        SUMMARY_PAD=$((31 - ${#SUMMARY_URL}))
+        printf "%*s│\n" "$SUMMARY_PAD" ""
+        printf "  │                                 │\n"
+        printf "  └─────────────────────────────────┘\n"
         echo ""
-        echo "  http://${IP}:8082/"
+        printf "  ${C_BOLD}In PKSM:${C_RESET}\n"
+        printf "    Set server URL to: ${C_CYAN}http://${IP}:8082/${C_RESET}\n"
+        printf "    ${C_DIM}(include the / at the end)${C_RESET}\n"
         echo ""
-        echo "Make sure to include the / at the end."
+        printf "  ${C_BOLD}Quick reference:${C_RESET}\n"
+        printf "    ${C_DIM}start${C_RESET}   $COMPOSE up -d\n"
+        printf "    ${C_DIM}stop${C_RESET}    $COMPOSE down\n"
+        printf "    ${C_DIM}logs${C_RESET}    $COMPOSE logs -f\n"
+        printf "    ${C_DIM}update${C_RESET}  ./setup.sh\n"
+        echo ""
     fi
-    echo ""
-    echo "=== Quick reference ==="
-    echo ""
-    echo "  $COMPOSE up -d      Start the server"
-    echo "  $COMPOSE down       Stop the server"
-    echo "  $COMPOSE logs -f    View logs"
     echo ""
 fi

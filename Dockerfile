@@ -66,15 +66,16 @@ FROM alpine:latest AS runtime
 
 WORKDIR /app
 
-RUN apk add --no-cache gcompat libstdc++ libgcc icu-libs && \
+RUN apk add --no-cache gcompat libstdc++ libgcc icu-libs python3 && \
     mkdir bin
 
 COPY --from=dotnet-build /out/GpssConsole ./bin/GpssConsole
 COPY --from=go-build /out/local-gpss ./local-gpss
 COPY entrypoint.sh ./entrypoint.sh
+COPY viewer ./viewer
 
 RUN echo "MODE=docker" > .env && \
-    chmod +x entrypoint.sh bin/GpssConsole
+    chmod +x entrypoint.sh bin/GpssConsole viewer/patch_gpss_port.py viewer/server.py
 
 EXPOSE 8082
 

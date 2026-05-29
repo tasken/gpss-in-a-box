@@ -52,10 +52,20 @@ A named pipe keeps the server PID known so TERM/INT signals forward cleanly for 
 gpss-in-a-box/
 ├── Dockerfile           # Multi-stage build (not-configured + runtime targets)
 ├── docker-compose.yml   # Service config, reads build args from .env
-├── entrypoint.sh        # Container startup, progress filter, signal handling
 ├── setup.sh             # Interactive setup wizard
 ├── README.md            # User guide
 ├── TECHNICAL.md         # This file
+├── entrypoint.sh        # Container startup, progress filter, signal handling
+├── viewer/              # Web UI (Python + vanilla JS/CSS)
+│   ├── server.py        # Bootstrap, auto-reload dev mode
+│   ├── routes.py        # HTTP handlers
+│   ├── pkm/             # Per-generation binary parsers
+│   ├── dex.py           # Showdown Pokédex data + lookup tables
+│   ├── index.py         # Search index builder/manager
+│   ├── pokepaste.py     # Showdown set export
+│   ├── legality.py      # PKHeX legality checking
+│   ├── revalidate.py    # Batch legality re-check CLI
+│   └── static/          # Frontend (HTML/CSS/JS)
 ├── .env                 # Build args (gitignored, created by setup.sh)
 └── .local/              # Runtime data (gitignored, created by setup.sh)
     ├── config.json      # Server configuration
@@ -92,10 +102,16 @@ sudo ufw delete allow from 192.168.1.0/24 to any port 8082 proto tcp
 
 ### Starting over
 
-To wipe everything and start fresh:
+Clean cache and rebuild artifacts (keeps your database):
 
 ```bash
-docker compose down
-rm -rf .local .env
+./setup.sh clean
+./setup.sh
+```
+
+Full reset (deletes everything including your database):
+
+```bash
+./setup.sh clean --all
 ./setup.sh
 ```
