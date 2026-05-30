@@ -1,6 +1,6 @@
 # GPSS-in-a-Box
 
-Automated setup for a local [GPSS](https://github.com/FlagBrew/local-gpss) server for [PKSM](https://github.com/FlagBrew/PKSM) on 3DS. Builds the latest [PKHeX](https://github.com/kwsch/PKHeX) legality engine, packages everything in Docker, and gets it running with a single command.
+Local replacement for the official GPSS server (shut down January 2026). Serves [PKSM](https://github.com/FlagBrew/PKSM) on 3DS and includes a web viewer for browsing, searching, and exporting Pokémon from the database. Builds the latest [PKHeX](https://github.com/kwsch/PKHeX) legality engine from source, packages everything in Docker, and gets it running with a single command.
 
 ## Requirements
 
@@ -32,9 +32,17 @@ docker compose up -d       # Start
 docker compose down        # Stop
 docker compose logs -f     # Logs
 ./setup.sh                 # Update or reconfigure
+./rebuild.sh               # Stop, remove image, rebuild
+./sync-sprites.sh          # Download sprites for offline use
 ```
 
+The web viewer is available at `http://<YOUR_IP>:8082/` in any browser.
+
 See [TECHNICAL.md](TECHNICAL.md) for troubleshooting and build details.
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE).
 
 ## Credits
 

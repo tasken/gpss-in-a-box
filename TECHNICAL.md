@@ -30,7 +30,7 @@ The Dockerfile has two build targets:
 
 2. **Go stage** builds the local-gpss API server. One `sed` patch adds `\n` to `fmt.Printf` progress lines so they flush instead of getting stuck in Go's internal buffer.
 
-3. **Alpine stage** combines both binaries into a minimal runtime image with the required shared libraries.
+3. **Alpine stage** combines both binaries into a minimal runtime image with the required shared libraries. Sprites are **not** baked into the image — they're served from the host via volume mount (`.local/sprites/`, symlinked at container startup by `entrypoint.sh`).
 
 Docker Compose reads `BUILD_TARGET`, `UPDATE_LEGALITY`, and `PKHEX_TAG` from `.env`, so `docker compose up --build` always uses the right settings without needing `setup.sh` again.
 
@@ -53,24 +53,30 @@ gpss-in-a-box/
 ├── Dockerfile           # Multi-stage build (not-configured + runtime targets)
 ├── docker-compose.yml   # Service config, reads build args from .env
 ├── setup.sh             # Interactive setup wizard
+├── rebuild.sh           # Stop, remove image, rebuild
+├── sync-sprites.sh      # Download sprites for offline use
+├── entrypoint.sh        # Container startup, progress filter, signal handling
+├── LICENSE              # GPL-3.0
 ├── README.md            # User guide
 ├── TECHNICAL.md         # This file
-├── entrypoint.sh        # Container startup, progress filter, signal handling
 ├── viewer/              # Web UI (Python + vanilla JS/CSS)
 │   ├── server.py        # Bootstrap, auto-reload dev mode
 │   ├── routes.py        # HTTP handlers
+│   ├── run.sh           # Local dev launcher (auto-reload)
 │   ├── pkm/             # Per-generation binary parsers
 │   ├── dex.py           # Showdown Pokédex data + lookup tables
 │   ├── index.py         # Search index builder/manager
 │   ├── pokepaste.py     # Showdown set export
 │   ├── legality.py      # PKHeX legality checking
 │   ├── revalidate.py    # Batch legality re-check CLI
+│   ├── patch_gpss_port.py # Redirect Go server to internal port
 │   └── static/          # Frontend (HTML/CSS/JS)
 ├── .env                 # Build args (gitignored, created by setup.sh)
 └── .local/              # Runtime data (gitignored, created by setup.sh)
     ├── config.json      # Server configuration
     ├── pkhex_version    # Installed engine version ("bundled" or tag)
     ├── host_ip          # Machine LAN IP for log display
+    ├── sprites/         # Downloaded sprites (via sync-sprites.sh)
     ├── local-gpss.db    # Active database
     └── gpss.db          # Backup database (downloaded from original GPSS)
 ```
