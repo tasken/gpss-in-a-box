@@ -58,6 +58,7 @@ gpss-in-a-box/
 ├── entrypoint.sh        # Container startup, progress filter, signal handling
 ├── LICENSE              # GPL-3.0
 ├── README.md            # User guide
+├── API.md               # API endpoint reference
 ├── TECHNICAL.md         # This file
 ├── viewer/              # Web UI (Python + vanilla JS/CSS)
 │   ├── server.py        # Bootstrap, auto-reload dev mode
