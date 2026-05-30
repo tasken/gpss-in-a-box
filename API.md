@@ -1,63 +1,28 @@
-# API Reference
+# API
 
 Base URL: `http://<your-ip>:8082`
 
 ## Modes
 
-The server runs in two modes:
+**Full** (default): everything - GPSS server, web viewer, database, all endpoints below.
 
-**Full mode** (default): GPSS server, web viewer, database, and all API endpoints.
-
-**Legality-only mode**: Just the PKHeX legality engine on a single endpoint. No database, no UI, no GPSS server. Only `POST /api/legality` and `GET /api/status` are available.
+**Legality-only**: just `POST /api/legality` and `GET /api/status`. No database, no UI.
 
 ```bash
-# Full mode (default)
-docker compose up -d
-
-# Legality-only mode
 LEGALITY_ONLY=1 docker compose up -d
-
-# Local legality-only
-python3 viewer/server.py --legality-only
 ```
 
-## Legality check
+---
 
-Check a raw PKM file against PKHeX without storing it in the database. Available in both modes.
+## POST /api/legality
 
-```
-POST /api/legality
-```
-
-**Headers:**
+Check raw Pokemon bytes against PKHeX. Works in both modes.
 
 | Header | Required | Description |
 |--------|----------|-------------|
-| `X-Generation` | Yes | Game generation (`1`-`9`, `BDSP`, `PLA`) |
-| `Content-Type` | No | `application/octet-stream` |
+| `X-Generation` | Yes | `1`-`9`, `BDSP`, or `PLA` |
 
-**Body:** Raw `.pkm` binary data (max 1 MB).
-
-**Response:**
-
-```json
-{
-  "legal": true,
-  "report": []
-}
-```
-
-```json
-{
-  "legal": false,
-  "report": [
-    "Invalid: Move 1 PP is above the amount allowed (99).",
-    "Invalid: Unable to match encounter."
-  ]
-}
-```
-
-**Example:**
+Body: raw `.pkm` bytes (max 1 MB).
 
 ```bash
 curl -X POST http://192.168.1.3:8082/api/legality \
@@ -65,98 +30,55 @@ curl -X POST http://192.168.1.3:8082/api/legality \
   --data-binary @my_pokemon.pkm
 ```
 
-## Search
+```json
+{"legal": true, "report": []}
+```
 
+```json
+{"legal": false, "report": ["Invalid: Move 1 PP is above the amount allowed (99)."]}
 ```
-GET /api/pokemon?q=&gen=&legal=&shiny=&sort=&page=&limit=
-```
+
+---
+
+## GET /api/pokemon
+
+Search the database. Full mode only.
 
 | Param | Description |
 |-------|-------------|
-| `q` | Search by name, nickname, OT, code, or ID |
-| `gen` | Filter by generation (`1`-`9`, `3.1` for Colosseum, `3.2` for XD) |
-| `legal` | `1` for legal, `0` for illegal |
-| `shiny` | `1` for shiny, `0` for regular |
-| `species` | Filter by species ID |
-| `sort` | `recent` (default), `dl`, `level`, `az`, `id` |
-| `page` | Page number (default `1`) |
-| `limit` | Results per page (default `40`, max `100`) |
+| `q` | Name, nickname, OT, code, or ID |
+| `gen` | `1`-`9`, `3.1` (Colosseum), `3.2` (XD) |
+| `legal` | `1` or `0` |
+| `shiny` | `1` or `0` |
+| `species` | Species ID |
+| `sort` | `recent`, `dl`, `level`, `az`, `id` |
+| `page` | Page number |
+| `limit` | Results per page (max `100`) |
 
-**Response:**
+## GET /api/pokemon/{id}
 
-```json
-{
-  "total": 91372,
-  "page": 1,
-  "pages": 3808,
-  "pokemon": [{ ... }, { ... }]
-}
-```
+Full detail for one Pokemon (stats, moves, types, Showdown paste, sprites).
 
-## Pokemon detail
+## GET /api/pokemon/{id}/legality
 
-```
-GET /api/pokemon/{id}
-```
+Live PKHeX legality check on a Pokemon in the database. Returns `legal`, `report`, and whether the check was live or from the DB cache.
 
-Returns full detail for a single Pokemon including stats, moves, types, Showdown paste, and sprite URLs.
+## GET /api/pokemon/{id}/download
 
-## Legality check (by ID)
+Download raw `.pkm` file.
 
-```
-GET /api/pokemon/{id}/legality
-```
+## GET /api/stats
 
-Runs a live PKHeX legality check on a Pokemon already in the database.
+Total count, legal count, per-generation breakdown, service status.
 
-**Response:**
+## GET /api/status
 
-```json
-{
-  "legal": true,
-  "legal_db": true,
-  "live": true,
-  "report": [],
-  "generation_checked": "9"
-}
-```
+Engine version, database size, service health.
 
-## Download
+## GET /api/updates
 
-```
-GET /api/pokemon/{id}/download
-```
+Checks GitHub for newer PKHeX versions.
 
-Download the raw `.pkm` binary file.
+## /api/v2/*
 
-## Stats
-
-```
-GET /api/stats
-```
-
-Database summary: total count, legal count, per-generation breakdown, service status.
-
-## Server status
-
-```
-GET /api/status
-```
-
-Engine version, database size, service health (GPSS, legality, sprites).
-
-## Update check
-
-```
-GET /api/updates
-```
-
-Check if a newer PKHeX engine version is available on GitHub.
-
-## GPSS proxy
-
-```
-* /api/v2/*
-```
-
-All requests under `/api/v2/` are proxied to the Go GPSS server. This is what PKSM on the 3DS talks to.
+Proxied to the Go GPSS server. This is what PKSM talks to.

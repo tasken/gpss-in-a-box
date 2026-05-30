@@ -1,6 +1,8 @@
 # GPSS-in-a-Box
 
-Local replacement for the official GPSS server (shut down January 2026). Serves [PKSM](https://github.com/FlagBrew/PKSM) on 3DS and includes a web viewer for browsing, searching, and exporting Pokémon from the database. Builds the latest [PKHeX](https://github.com/kwsch/PKHeX) legality engine from source, packages everything in Docker, and gets it running with a single command.
+The official GPSS server shut down in January 2026. This is a local replacement you can run on your own machine to keep using GPSS with [PKSM](https://github.com/FlagBrew/PKSM) on 3DS.
+
+It builds the latest [PKHeX](https://github.com/kwsch/PKHeX) legality engine from source, runs everything in Docker, and includes a web viewer for browsing, searching, and exporting Pokemon. One script to set up, one command to run.
 
 ## Requirements
 
@@ -36,24 +38,31 @@ docker compose logs -f     # Logs
 ./sync-sprites.sh          # Download sprites for offline use
 ```
 
-The web viewer is available at `http://<YOUR_IP>:8082/` in any browser.
+Open `http://<YOUR_IP>:8082/` in a browser to use the web viewer.
 
 ### Legality-only mode
 
-Run just the PKHeX legality engine as an API, without the database or web UI:
+If you only need the PKHeX legality engine as an API (no database, no web UI, no GPSS server):
 
 ```bash
 LEGALITY_ONLY=1 docker compose up -d
 ```
 
-See [API.md](API.md) for endpoint documentation and [TECHNICAL.md](TECHNICAL.md) for troubleshooting and build details.
+Send raw Pokemon bytes to `POST /api/legality` and get back a JSON result. See [API.md](API.md) for details.
+
+## Docs
+
+- [API.md](API.md) - API endpoints and usage examples
+- [TECHNICAL.md](TECHNICAL.md) - how the build works, troubleshooting
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+GPL-3.0 - see [LICENSE](LICENSE).
 
 ## Credits
 
-- [FlagBrew](https://github.com/FlagBrew) - local-gpss server and PKSM
-- [kwsch](https://github.com/kwsch/PKHeX) - PKHeX legality engine
-- [santacrab2](https://github.com/santacrab2/PKHeX-Plugins) - Auto-Legality Mod
+- [FlagBrew](https://github.com/FlagBrew) - [local-gpss](https://github.com/FlagBrew/local-gpss) server and [PKSM](https://github.com/FlagBrew/PKSM)
+- [kwsch](https://github.com/kwsch) - [PKHeX](https://github.com/kwsch/PKHeX) legality engine
+- [santacrab2](https://github.com/santacrab2) - [PKHeX-Plugins](https://github.com/santacrab2/PKHeX-Plugins) (Auto-Legality Mod)
+- [msikma](https://github.com/msikma) - [pokesprite](https://github.com/msikma/pokesprite) (item and ball sprites)
+- [Smogon](https://github.com/smogon) - [Pokemon Showdown](https://github.com/smogon/pokemon-showdown-client) (animated sprites, Pokedex data)
