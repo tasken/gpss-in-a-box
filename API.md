@@ -2,9 +2,28 @@
 
 Base URL: `http://<your-ip>:8082`
 
+## Modes
+
+The server runs in two modes:
+
+**Full mode** (default): GPSS server, web viewer, database, and all API endpoints.
+
+**Legality-only mode**: Just the PKHeX legality engine on a single endpoint. No database, no UI, no GPSS server. Only `POST /api/legality` and `GET /api/status` are available.
+
+```bash
+# Full mode (default)
+docker compose up -d
+
+# Legality-only mode
+LEGALITY_ONLY=1 docker compose up -d
+
+# Local legality-only
+python3 viewer/server.py --legality-only
+```
+
 ## Legality check
 
-Check a raw PKM file against PKHeX without storing it in the database.
+Check a raw PKM file against PKHeX without storing it in the database. Available in both modes.
 
 ```
 POST /api/legality

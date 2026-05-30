@@ -11,4 +11,6 @@ services:
       - "8082:8082"
     volumes:
       - ./:/app/host
+    environment:
+      - LEGALITY_ONLY=${LEGALITY_ONLY:-0}
     restart: unless-stopped

@@ -38,7 +38,15 @@ docker compose logs -f     # Logs
 
 The web viewer is available at `http://<YOUR_IP>:8082/` in any browser.
 
-See [TECHNICAL.md](TECHNICAL.md) for troubleshooting and build details.
+### Legality-only mode
+
+Run just the PKHeX legality engine as an API, without the database or web UI:
+
+```bash
+LEGALITY_ONLY=1 docker compose up -d
+```
+
+See [API.md](API.md) for endpoint documentation and [TECHNICAL.md](TECHNICAL.md) for troubleshooting and build details.
 
 ## License
 

@@ -26,9 +26,19 @@ if [ -z "$HOST_IP" ] && [ -f host_ip ]; then
     HOST_IP=$(cat host_ip)
 fi
 
+LEGALITY_ONLY="${LEGALITY_ONLY:-0}"
+PUBLIC_PORT=8082
+
+if [ "$LEGALITY_ONLY" = "1" ]; then
+    export GPSS_CONSOLE="/app/bin/GpssConsole"
+    export VIEWER_HOST="0.0.0.0"
+    export VIEWER_PORT="$PUBLIC_PORT"
+    echo "=== GPSS-in-a-Box (legality only) ==="
+    exec python3 /app/viewer/server.py --legality-only
+fi
+
 VIEWER_ENABLED="${VIEWER_ENABLED:-1}"
 GPSS_INTERNAL_PORT="${GPSS_INTERNAL_PORT:-8083}"
-PUBLIC_PORT=8082
 CONFIG_BACKUP=""
 VIEWER_PID=""
 

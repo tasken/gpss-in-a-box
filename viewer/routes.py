@@ -652,3 +652,63 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
+
+
+class LegalityOnlyHandler(BaseHTTPRequestHandler):
+    """Minimal handler: only POST /api/legality."""
+
+    gpss_backend: str = ""
+
+    def log_message(self, fmt: str, *args) -> None:
+        sys.stderr.write("%s - %s\n" % (self.log_date_time_string(), fmt % args))
+
+    def _json(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        if urlparse(self.path).path == "/api/status":
+            return self._json(200, {
+                "mode": "legality-only",
+                "engine": gpss_console_bin() is not None,
+            })
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_POST(self) -> None:
+        if urlparse(self.path).path == "/api/legality":
+            length = int(self.headers.get("Content-Length", 0))
+            if not length:
+                return self._json(400, {"error": "empty body"})
+            if length > 1_000_000:
+                return self._json(413, {"error": "payload too large"})
+            generation = self.headers.get("X-Generation", "").strip()
+            if not generation:
+                return self._json(400, {"error": "missing X-Generation header"})
+            pkm_bytes = self.rfile.read(length)
+            if gpss_console_bin() is None:
+                return self._json(503, {"error": "legality engine not available"})
+            try:
+                result = legality_check_pkm(generation, pkm_bytes, None)
+                if "error" in result:
+                    return self._json(200, {
+                        "legal": False,
+                        "report": [str(result["error"])],
+                        "error": str(result["error"]),
+                    })
+                report = [
+                    line.strip()
+                    for line in result.get("report", [])
+                    if line and line.strip() and line.strip() != "Legal!"
+                ]
+                return self._json(200, {
+                    "legal": bool(result.get("legal", False)),
+                    "report": report,
+                })
+            except Exception as err:
+                return self._json(500, {"error": f"legality check failed: {err}"})
+        self.send_error(HTTPStatus.NOT_FOUND)

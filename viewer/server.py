@@ -121,6 +121,18 @@ def _run_reloader() -> None:
         print("\nStopped.", flush=True)
 
 
+def _run_legality_only(host: str, port: int) -> None:
+    """Minimal server: only POST /api/legality, no DB/UI."""
+    from routes import LegalityOnlyHandler
+    server = ThreadingHTTPServer((host, port), LegalityOnlyHandler)
+    print("Legality-only mode", flush=True)
+    _print_listen_urls(host, port)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+
+
 def main() -> None:
     from routes import _runtime_mode
     runtime = _runtime_mode()
@@ -136,7 +148,11 @@ def main() -> None:
     )
     parser.add_argument("--reload", action="store_true")
     parser.add_argument("--no-reload", action="store_true")
+    parser.add_argument("--legality-only", action="store_true")
     args = parser.parse_args()
+
+    if args.legality_only or os.environ.get("LEGALITY_ONLY") == "1":
+        return _run_legality_only(args.host, args.port)
 
     use_reload = args.reload and not args.no_reload
     if use_reload and os.environ.get("VIEWER_RELOAD_CHILD") != "1":
