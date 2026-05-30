@@ -1,5 +1,16 @@
 #!/bin/sh
 
+LEGALITY_ONLY="${LEGALITY_ONLY:-0}"
+PUBLIC_PORT=8082
+
+if [ "$LEGALITY_ONLY" = "1" ]; then
+    export GPSS_CONSOLE="/app/bin/GpssConsole"
+    export VIEWER_HOST="0.0.0.0"
+    export VIEWER_PORT="$PUBLIC_PORT"
+    echo "=== GPSS-in-a-Box (legality only) ==="
+    exec python3 /app/viewer/server.py --legality-only
+fi
+
 mkdir -p /app/host/.local
 cd /app/host/.local || exit 1
 
@@ -24,17 +35,6 @@ ln -sfn /app/host/.local/sprites /app/sprites
 HOST_IP="${HOST_IP:-}"
 if [ -z "$HOST_IP" ] && [ -f host_ip ]; then
     HOST_IP=$(cat host_ip)
-fi
-
-LEGALITY_ONLY="${LEGALITY_ONLY:-0}"
-PUBLIC_PORT=8082
-
-if [ "$LEGALITY_ONLY" = "1" ]; then
-    export GPSS_CONSOLE="/app/bin/GpssConsole"
-    export VIEWER_HOST="0.0.0.0"
-    export VIEWER_PORT="$PUBLIC_PORT"
-    echo "=== GPSS-in-a-Box (legality only) ==="
-    exec python3 /app/viewer/server.py --legality-only
 fi
 
 VIEWER_ENABLED="${VIEWER_ENABLED:-1}"
