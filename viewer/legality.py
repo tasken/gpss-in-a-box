@@ -107,6 +107,47 @@ def _is_generic_gpss_error(msg: str) -> bool:
     return msg.strip().lower() == "gpss console returned an error"
 
 
+def _legalize_via_console(generation: str, pkm_bytes: bytes, version: str) -> dict:
+    """Run GpssConsole in legalize mode."""
+    bin_path = gpss_console_bin()
+    if not bin_path:
+        raise FileNotFoundError("GpssConsole binary not found")
+
+    b64 = base64.b64encode(pkm_bytes).decode("ascii")
+    proc = subprocess.run(
+        [
+            str(bin_path),
+            "--mode",
+            "legalize",
+            "--pokemon",
+            b64,
+            "--generation",
+            generation,
+            "--ver",
+            version,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    stdout = (proc.stdout or "").strip()
+    if not stdout:
+        err = (proc.stderr or "").strip() or f"GpssConsole exited {proc.returncode}"
+        raise RuntimeError(err)
+    return json.loads(stdout)
+
+
+def legalize_pkm(generation: str, pkm_bytes: bytes, version: str) -> dict:
+    """Auto-legalize a Pokemon via GpssConsole."""
+    gen = legality_generation(generation)
+    for payload in _legality_payloads(pkm_bytes, generation):
+        try:
+            return _legalize_via_console(gen, payload, version)
+        except (json.JSONDecodeError, RuntimeError, OSError) as err:
+            return {"error": str(err)}
+    return {"error": "Could not parse PKM for legalization"}
+
+
 def legality_check_pkm(
     generation: str, pkm_bytes: bytes, backend: str | None
 ) -> dict:

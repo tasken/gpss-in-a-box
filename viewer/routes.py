@@ -21,6 +21,7 @@ from legality import (
     gpss_console_bin,
     legality_check_pkm,
     legality_generation,
+    legalize_pkm,
 )
 from pkm import (
     effective_nickname,
@@ -385,6 +386,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/legality":
             return self._legality_check()
+        if parsed.path == "/api/legalize":
+            return self._legalize()
 
         self.send_error(HTTPStatus.METHOD_NOT_ALLOWED)
 
@@ -426,6 +429,51 @@ class Handler(BaseHTTPRequestHandler):
             })
         except Exception as err:
             return self._json(500, {"error": f"legality check failed: {err}"})
+
+    def _legalize(self) -> None:
+        """Auto-legalize a Pokemon: POST raw PKM bytes + generation + version."""
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            return self._json(400, {"error": "empty body"})
+        if length > 1_000_000:
+            return self._json(413, {"error": "payload too large"})
+
+        generation = self.headers.get("X-Generation", "").strip()
+        if not generation:
+            return self._json(400, {"error": "missing X-Generation header"})
+
+        version = self.headers.get("X-Version", "Any").strip()
+
+        pkm_bytes = self.rfile.read(length)
+
+        if gpss_console_bin() is None:
+            return self._json(503, {"error": "legality engine not available"})
+
+        try:
+            check = legality_check_pkm(generation, pkm_bytes, None)
+            report_before = [
+                line.strip()
+                for line in check.get("report", [])
+                if line and line.strip() and line.strip() != "Legal!"
+            ] if "error" not in check else []
+
+            result = legalize_pkm(generation, pkm_bytes, version)
+            if "error" in result:
+                return self._json(200, {"error": str(result["error"])})
+            report_after = [
+                line.strip()
+                for line in result.get("report", [])
+                if line and line.strip() and line.strip() != "Legal!"
+            ]
+            return self._json(200, {
+                "legal": bool(result.get("legal", False)),
+                "modified": bool(result.get("ran", False)),
+                "pokemon": result.get("pokemon"),
+                "report_before": report_before,
+                "report_after": report_after,
+            })
+        except Exception as err:
+            return self._json(500, {"error": f"legalization failed: {err}"})
 
     _SORT_ORDERS = {
         "recent": "upload_datetime DESC, id DESC",
@@ -679,19 +727,30 @@ class LegalityOnlyHandler(BaseHTTPRequestHandler):
             })
         self.send_error(HTTPStatus.NOT_FOUND)
 
+    def _read_pkm_request(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            self._json(400, {"error": "empty body"})
+            return None, None, None
+        if length > 1_000_000:
+            self._json(413, {"error": "payload too large"})
+            return None, None, None
+        generation = self.headers.get("X-Generation", "").strip()
+        if not generation:
+            self._json(400, {"error": "missing X-Generation header"})
+            return None, None, None
+        if gpss_console_bin() is None:
+            self._json(503, {"error": "legality engine not available"})
+            return None, None, None
+        pkm_bytes = self.rfile.read(length)
+        return pkm_bytes, generation, self.headers.get("X-Version", "Any").strip()
+
     def do_POST(self) -> None:
-        if urlparse(self.path).path == "/api/legality":
-            length = int(self.headers.get("Content-Length", 0))
-            if not length:
-                return self._json(400, {"error": "empty body"})
-            if length > 1_000_000:
-                return self._json(413, {"error": "payload too large"})
-            generation = self.headers.get("X-Generation", "").strip()
-            if not generation:
-                return self._json(400, {"error": "missing X-Generation header"})
-            pkm_bytes = self.rfile.read(length)
-            if gpss_console_bin() is None:
-                return self._json(503, {"error": "legality engine not available"})
+        path = urlparse(self.path).path
+        if path == "/api/legality":
+            pkm_bytes, generation, _ = self._read_pkm_request()
+            if pkm_bytes is None:
+                return
             try:
                 result = legality_check_pkm(generation, pkm_bytes, None)
                 if "error" in result:
@@ -711,4 +770,33 @@ class LegalityOnlyHandler(BaseHTTPRequestHandler):
                 })
             except Exception as err:
                 return self._json(500, {"error": f"legality check failed: {err}"})
+        if path == "/api/legalize":
+            pkm_bytes, generation, version = self._read_pkm_request()
+            if pkm_bytes is None:
+                return
+            try:
+                check = legality_check_pkm(generation, pkm_bytes, None)
+                report_before = [
+                    line.strip()
+                    for line in check.get("report", [])
+                    if line and line.strip() and line.strip() != "Legal!"
+                ] if "error" not in check else []
+
+                result = legalize_pkm(generation, pkm_bytes, version)
+                if "error" in result:
+                    return self._json(200, {"error": str(result["error"])})
+                report_after = [
+                    line.strip()
+                    for line in result.get("report", [])
+                    if line and line.strip() and line.strip() != "Legal!"
+                ]
+                return self._json(200, {
+                    "legal": bool(result.get("legal", False)),
+                    "modified": bool(result.get("ran", False)),
+                    "pokemon": result.get("pokemon"),
+                    "report_before": report_before,
+                    "report_after": report_after,
+                })
+            except Exception as err:
+                return self._json(500, {"error": f"legalization failed: {err}"})
         self.send_error(HTTPStatus.NOT_FOUND)
