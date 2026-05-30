@@ -381,7 +381,51 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if self._should_proxy_gpss():
             return self._proxy_gpss()
+
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/legality":
+            return self._legality_check()
+
         self.send_error(HTTPStatus.METHOD_NOT_ALLOWED)
+
+    def _legality_check(self) -> None:
+        """Standalone legality check: POST raw PKM bytes + generation header."""
+        length = int(self.headers.get("Content-Length", 0))
+        if not length:
+            return self._json(400, {"error": "empty body"})
+        if length > 1_000_000:
+            return self._json(413, {"error": "payload too large"})
+
+        generation = self.headers.get("X-Generation", "").strip()
+        if not generation:
+            return self._json(400, {"error": "missing X-Generation header"})
+
+        pkm_bytes = self.rfile.read(length)
+
+        if not self.gpss_backend and gpss_console_bin() is None:
+            return self._json(503, {"error": "legality engine not available"})
+
+        try:
+            result = legality_check_pkm(
+                generation, pkm_bytes, self.gpss_backend or None
+            )
+            if "error" in result:
+                return self._json(200, {
+                    "legal": False,
+                    "report": [str(result["error"])],
+                    "error": str(result["error"]),
+                })
+            report = [
+                line.strip()
+                for line in result.get("report", [])
+                if line and line.strip() and line.strip() != "Legal!"
+            ]
+            return self._json(200, {
+                "legal": bool(result.get("legal", False)),
+                "report": report,
+            })
+        except Exception as err:
+            return self._json(500, {"error": f"legality check failed: {err}"})
 
     _SORT_ORDERS = {
         "recent": "upload_datetime DESC, id DESC",
