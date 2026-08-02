@@ -8,9 +8,11 @@ services:
         PKHEX_TAG: ${PKHEX_TAG:-unused}
     container_name: local-gpss
     ports:
-      - "8082:8082"
+      - "${VIEWER_PORT:-8082}:8082"
     volumes:
       - ./:/app/host
     environment:
       - LEGALITY_ONLY=${LEGALITY_ONLY:-0}
+      - HOST_IP=${HOST_IP:-}
+      - PUBLIC_PORT=${VIEWER_PORT:-8082}
     restart: unless-stopped

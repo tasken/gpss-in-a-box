@@ -1,12 +1,13 @@
 #!/bin/sh
 
 LEGALITY_ONLY="${LEGALITY_ONLY:-0}"
-PUBLIC_PORT=8082
+VIEWER_LISTEN_PORT=8082
+PUBLIC_PORT="${PUBLIC_PORT:-$VIEWER_LISTEN_PORT}"
 
 if [ "$LEGALITY_ONLY" = "1" ]; then
     export GPSS_CONSOLE="/app/bin/GpssConsole"
     export VIEWER_HOST="0.0.0.0"
-    export VIEWER_PORT="$PUBLIC_PORT"
+    export VIEWER_PORT="$VIEWER_LISTEN_PORT"
     echo "=== GPSS-in-a-Box (legality only) ==="
     exec python3 /app/viewer/server.py --legality-only
 fi
@@ -92,7 +93,7 @@ if [ "$VIEWER_ENABLED" = "1" ]; then
     export GPSS_CONSOLE="/app/bin/GpssConsole"
     export GPSS_RUNTIME=docker
     export VIEWER_HOST="0.0.0.0"
-    export VIEWER_PORT="$PUBLIC_PORT"
+    export VIEWER_PORT="$VIEWER_LISTEN_PORT"
     python3 /app/viewer/server.py \
         --db "$GPSS_DB" \
         --gpss-backend "$GPSS_BACKEND" \

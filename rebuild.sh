@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# rebuild.sh — Stop, remove image, rebuild, and restart the container.
+# rebuild.sh — Rebuild and restart the configured deployment.
 
 if [ -t 1 ]; then
     C_RESET='\033[0m'
@@ -18,25 +18,43 @@ info()  { printf "${C_CYAN}%s${C_RESET}\n" "$*"; }
 ok()    { printf "${C_GREEN}✓${C_RESET} %s\n" "$*"; }
 err()   { printf "${C_RED}✗ %s${C_RESET}\n" "$*" >&2; }
 
+# Automatically detect if Docker needs sudo.
 if docker info > /dev/null 2>&1; then
-    COMPOSE="docker compose"
+    DOCKER_CMD="docker"
 else
-    COMPOSE="sudo docker compose"
+    DOCKER_CMD="sudo docker"
 fi
 
-info "Stopping container …"
-$COMPOSE down 2>/dev/null && ok "Stopped" || ok "Not running"
+if $DOCKER_CMD container inspect gpss > /dev/null 2>&1; then
+    info "Building image [gpss:local] …"
+    if ! $DOCKER_CMD build -t gpss:local .; then
+        err "Build failed"
+        exit 1
+    fi
 
-info "Removing image …"
-$COMPOSE down --rmi local 2>/dev/null && ok "Image removed" || ok "No image to remove"
+    IMAGE_ID=$($DOCKER_CMD image inspect --format '{{.Id}}' gpss:local)
+    CONTAINER_IMAGE_ID=$($DOCKER_CMD container inspect --format '{{.Image}}' gpss)
+    if [ "$CONTAINER_IMAGE_ID" != "$IMAGE_ID" ]; then
+        err "The Portainer container still uses the previous image."
+        err "Redeploy its stack in Portainer to apply gpss:local."
+        exit 1
+    fi
 
-info "Building …"
-if $COMPOSE build; then
-    ok "Build complete"
+    info "Restarting Portainer container [gpss] …"
+    $DOCKER_CMD restart gpss > /dev/null
 else
-    err "Build failed"
-    exit 1
+    info "Building Compose image …"
+    if ! $DOCKER_CMD compose build; then
+        err "Build failed"
+        exit 1
+    fi
+
+    info "Starting Compose service [local-gpss] …"
+    if ! $DOCKER_CMD compose up -d; then
+        err "Failed to start the Compose service."
+        exit 1
+    fi
 fi
 
 echo ""
-ok "Rebuild complete. Run '$COMPOSE up -d' to start."
+ok "Rebuild complete. Your development changes are now live."

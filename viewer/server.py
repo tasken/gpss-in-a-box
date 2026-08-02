@@ -48,12 +48,22 @@ def _local_ipv4_addresses() -> list[str]:
 
 
 def _print_listen_urls(host: str, port: int) -> None:
-    print(f"Viewer at http://127.0.0.1:{port}/", flush=True)
+    public_port = os.environ.get("PUBLIC_PORT", str(port))
+    print(f"Viewer at http://127.0.0.1:{public_port}/", flush=True)
+
+    # Check if a custom Host IP was passed from Docker/Portainer
+    if os.environ.get("HOST_IP"):
+        print(
+            f"  LAN  http://{os.environ.get('HOST_IP')}:{public_port}/",
+            flush=True,
+        )
+        return
+
     if host in ("", "0.0.0.0"):
         for ip in _local_ipv4_addresses():
-            print(f"  LAN  http://{ip}:{port}/", flush=True)
+            print(f"  LAN  http://{ip}:{public_port}/", flush=True)
     elif host not in ("127.0.0.1", "localhost"):
-        print(f"  bind http://{host}:{port}/", flush=True)
+        print(f"  bind http://{host}:{public_port}/", flush=True)
 
 
 def _watch_snapshot() -> dict[str, float]:

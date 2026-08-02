@@ -40,6 +40,7 @@ RUN if [ "$UPDATE_LEGALITY" = "true" ]; then \
         cp bin/GpssConsole /out/GpssConsole; \
     fi
 
+
 ## Stage 2: Build latest local-gpss server
 FROM golang:alpine AS go-build
 WORKDIR /src
@@ -61,6 +62,7 @@ RUN CGO_ENABLED=0 go build \
     -trimpath \
     -o /out/local-gpss
 
+
 ## Stage 3: Full runtime
 FROM alpine:latest AS runtime
 
@@ -69,13 +71,14 @@ WORKDIR /app
 RUN apk add --no-cache gcompat libstdc++ libgcc icu-libs python3 && \
     mkdir bin
 
-COPY --from=dotnet-build /out/GpssConsole ./bin/GpssConsole
-COPY --from=go-build /out/local-gpss ./local-gpss
-COPY entrypoint.sh ./entrypoint.sh
-COPY viewer ./viewer
+# Fix 1: Set permissions directly during the COPY step
+COPY --chmod=755 --from=dotnet-build /out/GpssConsole ./bin/GpssConsole
+COPY --chmod=755 --from=go-build /out/local-gpss ./local-gpss
+COPY --chmod=755 entrypoint.sh ./entrypoint.sh
+COPY --chmod=755 viewer ./viewer
 
-RUN echo "MODE=docker" > .env && \
-    chmod +x entrypoint.sh bin/GpssConsole viewer/patch_gpss_port.py viewer/server.py
+# Fix 2: Remove the heavy chmods from this step entirely
+RUN echo "MODE=docker" > .env
 
 EXPOSE 8082
 
