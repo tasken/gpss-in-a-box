@@ -41,7 +41,7 @@ gpss-in-a-box/
 ├── Dockerfile           # Multi-stage build
 ├── docker-compose.yml   # Service config, reads .env
 ├── setup.sh             # Setup wizard
-├── rebuild.sh           # Stop, remove image, rebuild
+├── rebuild.sh           # Rebuild and restart the configured deployment
 ├── sync-sprites.sh      # Download sprites for offline use
 ├── entrypoint.sh        # Container startup
 ├── LICENSE              # GPL-3.0
@@ -78,6 +78,7 @@ gpss-in-a-box/
 | Error after entering URL | Add `/` at the end |
 | Connection refused | Open port 8082 in your firewall (see below) |
 | No Pokemon showing up | Backup is still importing. Check `docker compose logs -f` |
+| Sprites / images missing (404 in logs) | Run `./sync-sprites.sh` to download sprite assets |
 | Pokemon marked as illegal incorrectly | Run `./setup.sh` to update the legality engine |
 | 3DS freezes | Update PKSM from [latest release](https://github.com/FlagBrew/PKSM/releases) |
 

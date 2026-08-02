@@ -15,9 +15,10 @@ It builds the latest [PKHeX](https://github.com/kwsch/PKHeX) legality engine fro
 git clone https://github.com/tasken/gpss-in-a-box.git
 cd gpss-in-a-box
 ./setup.sh
+./sync-sprites.sh
 ```
 
-The script asks a few yes/no questions and handles everything else.
+`setup.sh` asks a few yes/no questions and handles configuring the server. `sync-sprites.sh` downloads Pokemon, item, and ball sprites required by the web viewer.
 
 ## Connect your 3DS
 
@@ -34,7 +35,7 @@ docker compose up -d       # Start
 docker compose down        # Stop
 docker compose logs -f     # Logs
 ./setup.sh                 # Update or reconfigure
-./rebuild.sh               # Stop, remove image, rebuild
+./rebuild.sh               # Rebuild and restart the configured deployment
 ./sync-sprites.sh          # Download sprites for offline use
 ```
 
