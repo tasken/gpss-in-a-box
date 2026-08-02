@@ -1125,6 +1125,31 @@ kbd {
 .status-modal-head .micon { font-size: 16px; }
 .status-modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 
+/* ============ LEGALIZATION WORKFLOW ============ */
+.btn-legalize:hover {
+  border-color: var(--gold) !important;
+  color: var(--gold) !important;
+}
+.btn-download-legalized:hover {
+  border-color: var(--ok) !important;
+  color: var(--ok) !important;
+}
+.legalized-panel {
+  border: 1px solid var(--line);
+  background: rgba(95, 212, 154, 0.02);
+  padding: 10px;
+  border-left: 3px solid var(--ok);
+}
+.legalized-panel-incomplete {
+  background: rgba(240, 160, 96, 0.02);
+  border-left-color: var(--warn);
+}
+.lg-subtitle {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-family: var(--mono);
+}
+
 /* ============ MOBILE ============ */
 @media (max-width: 1100px) {
   .body { grid-template-columns: 200px 1fr 340px; }

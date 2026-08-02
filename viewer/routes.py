@@ -139,7 +139,7 @@ def row_to_entry(row: sqlite3.Row, dex: DexData, include_b64: bool = False) -> d
         "species_id": sid,
         "species_name": species_name,
         "species_slug": slug,
-        "sprite_url": sprite_url_for(sid, slug, gen, shiny),
+        "sprite_url": sprite_url_for(sid, slug, gen, shiny, sprite_slug=sprite_sl),
         "sprite_url_static": sprite_url_static(sid, sprite_sl, gen, shiny),
         "form": parsed["form"],
         "gender": parsed["gender"],
@@ -371,6 +371,14 @@ class Handler(BaseHTTPRequestHandler):
                 and parts[2].isdigit()
             ):
                 return self._legality(int(parts[2]))
+            if (
+                len(parts) == 4
+                and parts[0] == "api"
+                and parts[1] == "pokemon"
+                and parts[3] == "legalize"
+                and parts[2].isdigit()
+            ):
+                return self._legalize_id(int(parts[2]))
             pid = parts[-1] if parts else ""
             if pid.isdigit():
                 return self._detail(int(pid))
@@ -700,6 +708,47 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
+
+    def _legalize_id(self, pid: int) -> None:
+        row = self.source.execute(
+            "SELECT id, base_64, generation FROM pokemons WHERE id = ?", (pid,)
+        ).fetchone()
+        if not row:
+            return self._json(404, {"error": "not found"})
+
+        if gpss_console_bin() is None:
+            return self._json(503, {"error": "legality engine not available"})
+
+        try:
+            pkm_bytes = base64.b64decode(row["base_64"])
+            generation = row["generation"]
+
+            check = legality_check_pkm(generation, pkm_bytes, None)
+            report_before = [
+                line.strip()
+                for line in check.get("report", [])
+                if line and line.strip() and line.strip() != "Legal!"
+            ] if "error" not in check else []
+
+            result = legalize_pkm(generation, pkm_bytes, "Any")
+            if "error" in result:
+                return self._json(200, {"error": str(result["error"])})
+
+            report_after = [
+                line.strip()
+                for line in result.get("report", [])
+                if line and line.strip() and line.strip() != "Legal!"
+            ]
+
+            return self._json(200, {
+                "legal": bool(result.get("legal", False)),
+                "modified": bool(result.get("ran", False)),
+                "pokemon": result.get("pokemon"),
+                "report_before": report_before,
+                "report_after": report_after,
+            })
+        except Exception as err:
+            return self._json(500, {"error": f"legalization failed: {err}"})
 
 
 class LegalityOnlyHandler(BaseHTTPRequestHandler):

@@ -756,7 +756,7 @@ async function loadLegality(id, panelSel, pillSel) {
       pill.classList.toggle("on", res.ok && data.live);
       pill.classList.toggle("off", !(res.ok && data.live));
     }
-    panel.innerHTML = renderLegality(data, res.ok);
+    panel.innerHTML = renderLegality(data, res.ok, id);
     state.legalityCache.set(id, data);
   } catch {
     panel.innerHTML =
@@ -772,7 +772,7 @@ function legalitySeverity(line) {
   return "info";
 }
 
-function renderLegality(data, ok) {
+function renderLegality(data, ok, id) {
   if (!ok) {
     return `<p class="lg-note"><span class="lg-note-icon micon">error</span> ${esc(data.error || "Legality check failed")}</p>`;
   }
@@ -810,8 +810,68 @@ function renderLegality(data, ok) {
   } else if (live && legal) {
     html += '<p class="lg-empty"><span class="hl micon">check_circle</span> no issues reported by PKHeX</p>';
   }
+
+  if (!legal && id) {
+    html += `<div class="lg-actions" style="margin-top: 10px;">
+      <button type="button" class="btn btn-action btn-legalize" data-id="${id}" style="width: 100%; border-color: var(--warn); color: var(--warn); background: rgba(240, 160, 96, 0.05); font-weight: 500;">
+        <span class="micon">auto_fix_high</span> Auto-Legalize with PKHeX
+      </button>
+    </div>`;
+  }
+
   html += "</div>";
   return html;
+}
+
+function renderLegalizedState(data, id) {
+  const before = data.report_before || [];
+  const after = data.report_after || [];
+  let resHtml = `<div class="lg-body legalized-panel${data.legal ? "" : " legalized-panel-incomplete"}">`;
+  resHtml += '<div class="lg-badges tags">';
+  resHtml += tag(data.legal ? "legal" : "illegal", data.legal ? "legalized" : "still illegal");
+  resHtml += '</div>';
+
+  if (data.legal) {
+    resHtml += '<p class="lg-empty" style="color: var(--ok); margin: 8px 0; display: flex; align-items: center; gap: 4px;"><span class="micon">check_circle</span> Auto-legalized successfully!</p>';
+  } else {
+    resHtml += '<p class="lg-empty" style="color: var(--warn); margin: 8px 0; display: flex; align-items: center; gap: 4px;"><span class="micon">warning</span> Legalization incomplete</p>';
+  }
+
+  if (before.length || after.length) {
+    resHtml += `<div class="lg-subtitle mut" style="margin-top:8px; font-size:11px;">${data.legal ? "issues resolved:" : "legality report:"}</div>`;
+    resHtml += '<ul class="lg-report" style="margin-top: 4px; margin-bottom:12px; max-height: 120px; overflow-y: auto;">';
+    for (const line of before) {
+      const unresolved = after.includes(line);
+      const label = unresolved ? "remaining" : "fixed";
+      const styles = unresolved
+        ? ""
+        : 'style="border-left-color: var(--ok);"';
+      const badgeStyles = unresolved
+        ? ""
+        : 'style="background: var(--ok-bg); color: var(--ok);"';
+      const textStyles = unresolved
+        ? ""
+        : 'style="text-decoration: line-through; opacity: 0.6;"';
+      resHtml += `<li class="lg-line lg-invalid" ${styles}><span class="lg-sev" ${badgeStyles}>${label}</span><span class="lg-text" ${textStyles}>${esc(line)}</span></li>`;
+    }
+
+    for (const line of after) {
+      if (!before.includes(line)) {
+        resHtml += `<li class="lg-line lg-invalid"><span class="lg-sev">remaining</span><span class="lg-text">${esc(line)}</span></li>`;
+      }
+    }
+    resHtml += '</ul>';
+  }
+
+  resHtml += '<div class="btn-row" style="margin-top: 12px; display: flex; gap: 8px;">';
+  if (data.pokemon) {
+    resHtml += `<button type="button" class="btn btn-action btn-download-legalized" data-pkm="${data.pokemon}" data-id="${id}" style="flex: 1; border-color: var(--ok); color: var(--ok); background: rgba(95, 212, 154, 0.05); font-weight: 500;"><span class="micon">download</span> Download .pkm</button>`;
+  }
+  resHtml += `<button type="button" class="btn btn-action btn-legalize-reset" data-id="${id}" style="border-color: var(--line); color: var(--mut);"><span class="micon">close</span></button>`;
+  resHtml += '</div>';
+  resHtml += '</div>';
+
+  return resHtml;
 }
 
 
@@ -1075,6 +1135,67 @@ async function loadOthers(currentId, speciesId, speciesName) {
 }
 
 function bindEvents() {
+  document.body.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".btn-download-legalized");
+    if (btn) {
+      const base64Data = btn.dataset.pkm;
+      const pid = btn.dataset.id;
+      const entry = state.list.find((p) => p.id == pid);
+      const speciesName = entry ? entry.species_name : "pokemon";
+      const safe = speciesName.replace(/[^a-zA-Z0-9-_]/g, "");
+
+      const pkmBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      const blob = new Blob([pkmBytes], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safe}_${pid}_legalized.pkm`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    const resetBtn = e.target.closest(".btn-legalize-reset");
+    if (resetBtn) {
+      const pid = resetBtn.dataset.id;
+      loadLegality(pid);
+      if (document.getElementById("page-legality-panel")) {
+        loadLegality(pid, "#page-legality-panel", "#page-engine-pill");
+      }
+      return;
+    }
+
+    const legalizeBtn = e.target.closest(".btn-legalize");
+    if (legalizeBtn) {
+      const pid = legalizeBtn.dataset.id;
+      const panel = legalizeBtn.closest(".section-body");
+      if (!panel) return;
+
+      legalizeBtn.disabled = true;
+      legalizeBtn.innerHTML = '<span class="lg-spinner"></span> legalizing…';
+
+      try {
+        const res = await fetch(`/api/pokemon/${pid}/legalize`);
+        const resData = await res.json();
+
+        if (!res.ok || resData.error) {
+          panel.innerHTML = `<div class="lg-body">
+            <p class="lg-note"><span class="lg-note-icon micon">error</span> Legalization failed: ${esc(resData.error || "Unknown error")}</p>
+            <button type="button" class="btn btn-legalize-reset" data-id="${pid}" style="margin-top: 8px;"><span class="micon">arrow_back</span> Back</button>
+          </div>`;
+          return;
+        }
+
+        panel.innerHTML = renderLegalizedState(resData, pid);
+      } catch (err) {
+        panel.innerHTML = `<div class="lg-body">
+          <p class="lg-note"><span class="lg-note-icon micon">error</span> Connection error: ${esc(err.message)}</p>
+          <button type="button" class="btn btn-legalize-reset" data-id="${pid}" style="margin-top: 8px;"><span class="micon">arrow_back</span> Back</button>
+        </div>`;
+      }
+    }
+  });
+
   $$("#seg-legal .seg-btn").forEach((b) => {
     b.addEventListener("click", () => setSegment("legal", b.dataset.val));
   });
